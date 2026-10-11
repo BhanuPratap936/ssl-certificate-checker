@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSL Certificate Checker</title>
+<style>
+  :root {
+    --bg: #eef2f5; --panel: #ffffff; --ink: #16232e; --muted: #5d6e7b; --line: #d5dde3;
+    --ok: #1f7a4d; --warn: #b8730a; --bad: #b3261e; --accent: #0f4c5c;
+    --serif: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11181e; --panel: #19232b; --ink: #e6edf2; --muted: #8fa1ae; --line: #2b3945;
+            --ok: #54c58a; --warn: #e5a948; --bad: #ff8a80; --accent: #7cc4d6; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans);
+         display: flex; flex-direction: column; max-width: 640px; margin: 0 auto; }
+  header { padding: 20px 16px 8px; }
+  h1 { font: 600 1.5rem/1.2 var(--serif); margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: .95rem; }
+  #log { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 92%; padding: 10px 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+  .me { align-self: flex-end; background: var(--accent); color: #fff; border-color: transparent; }
+  @media (prefers-color-scheme: dark) { .me { color: #0b1a20; } }
+  .txt { white-space: pre-wrap; }
+  .cert { border-left: 5px solid var(--line); padding: 8px 12px; margin: 6px 0; background: var(--bg); border-radius: 6px; }
+  .cert b { font-family: var(--serif); font-size: 1.05rem; word-break: break-all; }
+  .cert small { display: block; color: var(--muted); }
+  .OK { border-left-color: var(--ok); } .WARNING { border-left-color: var(--warn); }
+  .CRITICAL, .EXPIRED, .INVALID, .ERROR { border-left-color: var(--bad); }
+  .tag { font-weight: 600; } .OK .tag { color: var(--ok); } .WARNING .tag { color: var(--warn); }
+  .CRITICAL .tag, .EXPIRED .tag, .INVALID .tag, .ERROR .tag { color: var(--bad); }
+  form { display: flex; gap: 8px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  input { flex: 1; min-width: 0; font: inherit; padding: 12px 14px; border-radius: 12px;
+          border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  button { font: inherit; font-weight: 600; padding: 0 18px; border: 0; border-radius: 12px;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { button { color: #0b1a20; } }
+  button:disabled { opacity: .6; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SSL Certificate Checker</h1>
+  <p>Type a website to see when its certificate expires.</p>
+</header>
+<main id="log" aria-live="polite"></main>
+<form id="form">
+  <input id="q" placeholder="example.com or /help" autocomplete="off" aria-label="Website to check" required>
+  <button id="go">Check</button>
+</form>
+<script>
+const log = document.getElementById("log"), form = document.getElementById("form"),
+      q = document.getElementById("q"), go = document.getElementById("go");
+
+function bubble(cls) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  return d;
+}
+
+function certCard(r) {
+  const d = document.createElement("div");
+  d.className = "cert " + r.status;
+  const name = document.createElement("b"); name.textContent = r.domain;
+  const line = document.createElement("small");
+  const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = r.status;
+  line.append(tag, r.error ? " · " + r.error
+    : ` · ${r.days} days left (expires ${r.expires})`);
+  d.append(name, line);
+  if (!r.error) {
+    const iss = document.createElement("small");
+    iss.textContent = "Issuer: " + r.issuer + (r.note ? " · " + r.note : "");
+    d.append(iss);
+  }
+  return d;
+}
+
+bubble("").textContent = "Hi! Send me a website, like github.com, or type /help.";
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = q.value.trim();
+  if (!text) return;
+  bubble("me").textContent = text;
+  q.value = ""; go.disabled = true;
+  const reply = bubble(""); reply.textContent = "Checking…";
+  try {
+    const res = await fetch("/api/chat", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
+    const data = await res.json();
+    reply.textContent = "";
+    if (data.text) {
+      const t = document.createElement("div"); t.className = "txt"; t.textContent = data.text;
+      reply.appendChild(t);
+    }
+    (data.results || []).forEach((r) => reply.appendChild(certCard(r)));
+  } catch {
+    reply.textContent = "Couldn't reach the server. Try again.";
+  }
+  go.disabled = false; log.scrollTop = log.scrollHeight; q.focus();
+});
+</script>
+</body>
+</html>
